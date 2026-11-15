@@ -61,7 +61,7 @@ private fun saveItem(context: Context, imageUri: String, text: String) {
     CoroutineScope(Dispatchers.IO).launch {
         val id = AppDatabase.get(appContext).savedItemDao()
             .insert(SavedItem(imageUri = imageUri, ocrText = text))
-        NotificationHelper.showSaved(appContext, id)
+        NotificationHelper.showSaved(appContext, id, imageUri)
     }
 }
 

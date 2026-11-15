@@ -29,7 +29,9 @@ class NoteReceiver : BroadcastReceiver() {
                     val link = Regex("https?://\\S+").find(note)?.value
                     dao.update(item.copy(note = note, link = link ?: item.link))
                 }
-                NotificationHelper.showNoteSaved(appContext, itemId, note)
+                NotificationHelper.showNoteSaved(
+                    appContext, itemId, note, item?.imageUri ?: ""
+                )
             } finally {
                 pending.finish()
             }
