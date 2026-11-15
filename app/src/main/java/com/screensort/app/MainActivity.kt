@@ -28,6 +28,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import android.provider.MediaStore
+import androidx.compose.runtime.DisposableEffect
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -71,7 +73,21 @@ fun PermissionScreen() {
         Text("ScreenSort", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(16.dp))
         if (granted) {
+            var lastName by remember { mutableStateOf("None yet") }
+
+            DisposableEffect(Unit) {
+                val observer = ScreenshotObserver(context.contentResolver) { _, name ->
+                    lastName = name
+                }
+                context.contentResolver.registerContentObserver(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, observer
+                )
+                onDispose { context.contentResolver.unregisterContentObserver(observer) }
+            }
+
             Text("Permission granted. ScreenSort can read your screenshots.")
+            Spacer(Modifier.height(16.dp))
+            Text("Last screenshot detected: $lastName")
         } else {
             Text("ScreenSort needs access to your photos to find your screenshots.")
             Spacer(Modifier.height(16.dp))
