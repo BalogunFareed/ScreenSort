@@ -1,6 +1,7 @@
 package com.screensort.app
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -23,6 +24,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,10 +38,14 @@ import androidx.core.content.ContextCompat
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        NotificationHelper.createChannel(this)
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -46,6 +53,15 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+}
+
+private fun saveItem(context: Context, imageUri: String, text: String) {
+    val appContext = context.applicationContext
+    CoroutineScope(Dispatchers.IO).launch {
+        val id = AppDatabase.get(appContext).savedItemDao()
+            .insert(SavedItem(imageUri = imageUri, ocrText = text))
+        NotificationHelper.showSaved(appContext, id)
     }
 }
 
@@ -70,6 +86,21 @@ fun PermissionScreen() {
         ActivityResultContracts.RequestPermission()
     ) { isGranted -> granted = isGranted }
 
+    val notificationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
+
+    LaunchedEffect(granted) {
+        if (granted &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                context, Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -85,6 +116,9 @@ fun PermissionScreen() {
             var lastName by remember { mutableStateOf("None yet") }
             var ocrText by remember { mutableStateOf("") }
 
+            val items by AppDatabase.get(context).savedItemDao()
+                .getAll().collectAsState(initial = emptyList())
+
             DisposableEffect(Unit) {
                 val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
                 val observer = ScreenshotObserver(context.contentResolver) { uri, name ->
@@ -95,6 +129,7 @@ fun PermissionScreen() {
                         recognizer.process(image)
                             .addOnSuccessListener { result ->
                                 ocrText = result.text.ifBlank { "No text found" }
+                                saveItem(context, uri.toString(), result.text)
                             }
                             .addOnFailureListener { e ->
                                 ocrText = "OCR failed: ${e.message}"
@@ -115,6 +150,11 @@ fun PermissionScreen() {
             Text("Permission granted. ScreenSort can read your screenshots.")
             Spacer(Modifier.height(16.dp))
             Text("Last screenshot detected: $lastName")
+            Spacer(Modifier.height(16.dp))
+            Text("Saved so far: ${items.size}", style = MaterialTheme.typography.titleMedium)
+            val latest = items.firstOrNull()
+            Text("Latest note: ${latest?.note?.ifBlank { "(none yet)" } ?: "(none yet)"}")
+            Text("Latest link: ${latest?.link ?: "(none)"}")
             Spacer(Modifier.height(16.dp))
             Text("Text found:", style = MaterialTheme.typography.titleMedium)
             Text(ocrText)
