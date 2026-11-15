@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -14,11 +15,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,8 +32,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import android.provider.MediaStore
-import androidx.compose.runtime.DisposableEffect
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -66,28 +71,53 @@ fun PermissionScreen() {
     ) { isGranted -> granted = isGranted }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text("ScreenSort", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(16.dp))
+
         if (granted) {
             var lastName by remember { mutableStateOf("None yet") }
+            var ocrText by remember { mutableStateOf("") }
 
             DisposableEffect(Unit) {
-                val observer = ScreenshotObserver(context.contentResolver) { _, name ->
+                val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+                val observer = ScreenshotObserver(context.contentResolver) { uri, name ->
                     lastName = name
+                    ocrText = "Reading..."
+                    try {
+                        val image = InputImage.fromFilePath(context, uri)
+                        recognizer.process(image)
+                            .addOnSuccessListener { result ->
+                                ocrText = result.text.ifBlank { "No text found" }
+                            }
+                            .addOnFailureListener { e ->
+                                ocrText = "OCR failed: ${e.message}"
+                            }
+                    } catch (e: Exception) {
+                        ocrText = "Could not open image: ${e.message}"
+                    }
                 }
                 context.contentResolver.registerContentObserver(
                     MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, observer
                 )
-                onDispose { context.contentResolver.unregisterContentObserver(observer) }
+                onDispose {
+                    context.contentResolver.unregisterContentObserver(observer)
+                    recognizer.close()
+                }
             }
 
             Text("Permission granted. ScreenSort can read your screenshots.")
             Spacer(Modifier.height(16.dp))
             Text("Last screenshot detected: $lastName")
+            Spacer(Modifier.height(16.dp))
+            Text("Text found:", style = MaterialTheme.typography.titleMedium)
+            Text(ocrText)
         } else {
             Text("ScreenSort needs access to your photos to find your screenshots.")
             Spacer(Modifier.height(16.dp))
