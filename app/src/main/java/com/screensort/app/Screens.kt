@@ -127,6 +127,10 @@ private fun ItemCard(item: SavedItem, onOpen: (Long) -> Unit) {
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(formatDate(item.savedAt), style = MaterialTheme.typography.labelMedium)
+                val who = listOfNotNull(item.sourceApp, item.authorName).joinToString(" · ")
+                if (who.isNotBlank()) {
+                    Text(who, style = MaterialTheme.typography.labelMedium)
+                }
                 if (item.note.isNotBlank()) {
                     Text(
                         item.note,
@@ -217,12 +221,13 @@ fun DetailScreen(
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(onClick = {
+                val info = LinkParser.parse(link.trim())
                 onSave(
                     item.copy(
                         note = note.trim(),
                         link = link.trim().ifBlank { null },
-                        authorName = author.trim().ifBlank { null },
-                        sourceApp = source.trim().ifBlank { null },
+                        authorName = author.trim().ifBlank { info.handle },
+                        sourceApp = source.trim().ifBlank { info.sourceApp },
                         postDate = postDate.trim().ifBlank { null }
                     )
                 )
