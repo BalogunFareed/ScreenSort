@@ -1,11 +1,9 @@
 package com.screensort.app
 
 import android.Manifest
-import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.provider.MediaStore
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -22,10 +20,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
@@ -40,15 +34,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-    }
-}
-
-private fun saveItem(context: Context, imageUri: String, text: String) {
-    val appContext = context.applicationContext
-    CoroutineScope(Dispatchers.IO).launch {
-        val id = AppDatabase.get(appContext).savedItemDao()
-            .insert(SavedItem(imageUri = imageUri, ocrText = text))
-        NotificationHelper.showSaved(appContext, id, imageUri)
     }
 }
 
@@ -117,37 +102,25 @@ fun MainContent() {
     val dao = remember { AppDatabase.get(context).savedItemDao() }
     val savedItems by remember { dao.getAll() }.collectAsState(initial = emptyList())
     var selectedId by remember { mutableStateOf<Long?>(null) }
+    var monitoring by remember { mutableStateOf(ServicePrefs.isEnabled(context)) }
 
-    DisposableEffect(Unit) {
-        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-        val observer = ScreenshotObserver(context.contentResolver) { uri, _ ->
-            try {
-                val image = InputImage.fromFilePath(context, uri)
-                recognizer.process(image)
-                    .addOnSuccessListener { result ->
-                        saveItem(context, uri.toString(), result.text)
-                    }
-                    .addOnFailureListener {
-                        saveItem(context, uri.toString(), "")
-                    }
-            } catch (e: Exception) {
-                saveItem(context, uri.toString(), "")
-            }
-        }
-        context.contentResolver.registerContentObserver(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, observer
-        )
-        onDispose {
-            context.contentResolver.unregisterContentObserver(observer)
-            recognizer.close()
-        }
+    LaunchedEffect(monitoring) {
+        if (monitoring) ScreenshotService.start(context) else ScreenshotService.stop(context)
     }
 
     val selected = savedItems.firstOrNull { it.id == selectedId }
     BackHandler(enabled = selected != null) { selectedId = null }
 
     if (selected == null) {
-        ListScreen(savedItems) { id -> selectedId = id }
+        ListScreen(
+            savedItems = savedItems,
+            monitoring = monitoring,
+            onToggleMonitoring = { enabled ->
+                monitoring = enabled
+                ServicePrefs.setEnabled(context, enabled)
+            },
+            onOpen = { id -> selectedId = id }
+        )
     } else {
         DetailScreen(
             item = selected,

@@ -13,6 +13,7 @@ class ScreenshotObserver(
 ) : ContentObserver(Handler(Looper.getMainLooper())) {
 
     private var lastId: Long = -1
+    private var lastHandledAt: Long = 0
 
     override fun onChange(selfChange: Boolean, uri: Uri?) {
         super.onChange(selfChange, uri)
@@ -38,6 +39,10 @@ class ScreenshotObserver(
 
                 if (isScreenshot && id != lastId) {
                     lastId = id
+                    val now = System.currentTimeMillis()
+                    if (now - lastHandledAt < 3000) return@use
+                    lastHandledAt = now
+
                     val imageUri = Uri.withAppendedPath(
                         MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id.toString()
                     )

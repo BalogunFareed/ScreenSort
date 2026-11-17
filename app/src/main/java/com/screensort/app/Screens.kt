@@ -72,7 +72,12 @@ fun ScreenshotImage(
 }
 
 @Composable
-fun ListScreen(savedItems: List<SavedItem>, onOpen: (Long) -> Unit) {
+fun ListScreen(
+    savedItems: List<SavedItem>,
+    monitoring: Boolean,
+    onToggleMonitoring: (Boolean) -> Unit,
+    onOpen: (Long) -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -80,6 +85,21 @@ fun ListScreen(savedItems: List<SavedItem>, onOpen: (Long) -> Unit) {
             .padding(16.dp)
     ) {
         Text("ScreenSort", style = MaterialTheme.typography.headlineMedium)
+        Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Auto-save screenshots", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    if (monitoring) "On, works in the background" else "Paused",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            Switch(checked = monitoring, onCheckedChange = onToggleMonitoring)
+        }
+        Spacer(Modifier.height(8.dp))
         Text("${savedItems.size} saved", style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(12.dp))
 
