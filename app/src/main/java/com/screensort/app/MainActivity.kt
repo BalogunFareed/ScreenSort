@@ -7,29 +7,16 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -49,7 +36,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    PermissionScreen()
+                    AppRoot()
                 }
             }
         }
@@ -66,7 +53,7 @@ private fun saveItem(context: Context, imageUri: String, text: String) {
 }
 
 @Composable
-fun PermissionScreen() {
+fun AppRoot() {
     val context = LocalContext.current
 
     val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -101,69 +88,75 @@ fun PermissionScreen() {
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text("ScreenSort", style = MaterialTheme.typography.headlineMedium)
-        Spacer(Modifier.height(16.dp))
-
-        if (granted) {
-            var lastName by remember { mutableStateOf("None yet") }
-            var ocrText by remember { mutableStateOf("") }
-
-            val items by AppDatabase.get(context).savedItemDao()
-                .getAll().collectAsState(initial = emptyList())
-
-            DisposableEffect(Unit) {
-                val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-                val observer = ScreenshotObserver(context.contentResolver) { uri, name ->
-                    lastName = name
-                    ocrText = "Reading..."
-                    try {
-                        val image = InputImage.fromFilePath(context, uri)
-                        recognizer.process(image)
-                            .addOnSuccessListener { result ->
-                                ocrText = result.text.ifBlank { "No text found" }
-                                saveItem(context, uri.toString(), result.text)
-                            }
-                            .addOnFailureListener { e ->
-                                ocrText = "OCR failed: ${e.message}"
-                            }
-                    } catch (e: Exception) {
-                        ocrText = "Could not open image: ${e.message}"
-                    }
-                }
-                context.contentResolver.registerContentObserver(
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, observer
-                )
-                onDispose {
-                    context.contentResolver.unregisterContentObserver(observer)
-                    recognizer.close()
-                }
-            }
-
-            Text("Permission granted. ScreenSort can read your screenshots.")
+    if (granted) {
+        MainContent()
+    } else {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .systemBarsPadding()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("ScreenSort", style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.height(16.dp))
-            Text("Last screenshot detected: $lastName")
-            Spacer(Modifier.height(16.dp))
-            Text("Saved so far: ${items.size}", style = MaterialTheme.typography.titleMedium)
-            val latest = items.firstOrNull()
-            Text("Latest note: ${latest?.note?.ifBlank { "(none yet)" } ?: "(none yet)"}")
-            Text("Latest link: ${latest?.link ?: "(none)"}")
-            Spacer(Modifier.height(16.dp))
-            Text("Text found:", style = MaterialTheme.typography.titleMedium)
-            Text(ocrText)
-        } else {
             Text("ScreenSort needs access to your photos to find your screenshots.")
             Spacer(Modifier.height(16.dp))
             Button(onClick = { launcher.launch(permission) }) {
                 Text("Allow access")
             }
         }
+    }
+}
+
+@Composable
+fun MainContent() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val dao = remember { AppDatabase.get(context).savedItemDao() }
+    val savedItems by remember { dao.getAll() }.collectAsState(initial = emptyList())
+    var selectedId by remember { mutableStateOf<Long?>(null) }
+
+    DisposableEffect(Unit) {
+        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        val observer = ScreenshotObserver(context.contentResolver) { uri, _ ->
+            try {
+                val image = InputImage.fromFilePath(context, uri)
+                recognizer.process(image)
+                    .addOnSuccessListener { result ->
+                        saveItem(context, uri.toString(), result.text)
+                    }
+                    .addOnFailureListener {
+                        saveItem(context, uri.toString(), "")
+                    }
+            } catch (e: Exception) {
+                saveItem(context, uri.toString(), "")
+            }
+        }
+        context.contentResolver.registerContentObserver(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, observer
+        )
+        onDispose {
+            context.contentResolver.unregisterContentObserver(observer)
+            recognizer.close()
+        }
+    }
+
+    val selected = savedItems.firstOrNull { it.id == selectedId }
+    BackHandler(enabled = selected != null) { selectedId = null }
+
+    if (selected == null) {
+        ListScreen(savedItems) { id -> selectedId = id }
+    } else {
+        DetailScreen(
+            item = selected,
+            onBack = { selectedId = null },
+            onSave = { updated -> scope.launch(Dispatchers.IO) { dao.update(updated) } },
+            onDelete = { item ->
+                scope.launch(Dispatchers.IO) { dao.delete(item) }
+                selectedId = null
+            }
+        )
     }
 }

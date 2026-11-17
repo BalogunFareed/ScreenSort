@@ -11,6 +11,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
+import androidx.room.Delete
 
 @Entity(tableName = "saved_items")
 data class SavedItem(
@@ -38,6 +39,9 @@ interface SavedItemDao {
 
     @Query("SELECT * FROM saved_items WHERE id = :id")
     suspend fun getById(id: Long): SavedItem?
+
+    @Delete
+    suspend fun delete(item: SavedItem)
 }
 
 @Database(entities = [SavedItem::class], version = 1, exportSchema = false)
