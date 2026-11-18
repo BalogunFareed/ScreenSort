@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -103,9 +104,17 @@ fun MainContent() {
     val savedItems by remember { dao.getAll() }.collectAsState(initial = emptyList())
     var selectedId by remember { mutableStateOf<Long?>(null) }
     var monitoring by remember { mutableStateOf(ServicePrefs.isEnabled(context)) }
+    var askedName by remember { mutableStateOf(UserPrefs.hasAsked(context)) }
 
     LaunchedEffect(monitoring) {
         if (monitoring) ScreenshotService.start(context) else ScreenshotService.stop(context)
+    }
+
+    if (!askedName) {
+        NameDialog { name ->
+            UserPrefs.saveName(context, name)
+            askedName = true
+        }
     }
 
     val selected = savedItems.firstOrNull { it.id == selectedId }
@@ -127,8 +136,26 @@ fun MainContent() {
             onBack = { selectedId = null },
             onSave = { updated -> scope.launch(Dispatchers.IO) { dao.update(updated) } },
             onDelete = { item ->
-                scope.launch(Dispatchers.IO) { dao.delete(item) }
+                scope.launch(Dispatchers.IO) {
+                    ReminderScheduler.cancel(context, item.id)
+                    dao.delete(item)
+                }
                 selectedId = null
+            },
+            onSetReminder = { time ->
+                if (time != null && time <= System.currentTimeMillis()) {
+                    Toast.makeText(context, "Pick a time in the future", Toast.LENGTH_SHORT).show()
+                } else {
+                    scope.launch(Dispatchers.IO) {
+                        val updated = selected.copy(remindAt = time)
+                        dao.update(updated)
+                        if (time == null) {
+                            ReminderScheduler.cancel(context, selected.id)
+                        } else {
+                            ReminderScheduler.schedule(context, updated)
+                        }
+                    }
+                }
             }
         )
     }

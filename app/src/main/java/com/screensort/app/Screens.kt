@@ -1,9 +1,14 @@
 package com.screensort.app
 
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -24,10 +29,45 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.DateFormat
+import java.util.Calendar
 import java.util.Date
 
 private fun formatDate(millis: Long): String =
     DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(millis))
+
+private fun tomorrowAt(hour: Int): Long {
+    val cal = Calendar.getInstance()
+    cal.add(Calendar.DAY_OF_YEAR, 1)
+    cal.set(Calendar.HOUR_OF_DAY, hour)
+    cal.set(Calendar.MINUTE, 0)
+    cal.set(Calendar.SECOND, 0)
+    cal.set(Calendar.MILLISECOND, 0)
+    return cal.timeInMillis
+}
+
+private fun pickDateTime(context: Context, onPicked: (Long) -> Unit) {
+    val now = Calendar.getInstance()
+    DatePickerDialog(
+        context,
+        { _, year, month, day ->
+            TimePickerDialog(
+                context,
+                { _, hour, minute ->
+                    val cal = Calendar.getInstance()
+                    cal.set(year, month, day, hour, minute, 0)
+                    cal.set(Calendar.MILLISECOND, 0)
+                    onPicked(cal.timeInMillis)
+                },
+                now.get(Calendar.HOUR_OF_DAY),
+                now.get(Calendar.MINUTE),
+                false
+            ).show()
+        },
+        now.get(Calendar.YEAR),
+        now.get(Calendar.MONTH),
+        now.get(Calendar.DAY_OF_MONTH)
+    ).show()
+}
 
 private fun loadBitmap(context: Context, uriString: String, maxSize: Int): Bitmap? = try {
     val uri = Uri.parse(uriString)
@@ -131,6 +171,12 @@ private fun ItemCard(item: SavedItem, onOpen: (Long) -> Unit) {
                 if (who.isNotBlank()) {
                     Text(who, style = MaterialTheme.typography.labelMedium)
                 }
+                if (item.remindAt != null) {
+                    Text(
+                        "Reminder: ${formatDate(item.remindAt)}",
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
                 if (item.note.isNotBlank()) {
                     Text(
                         item.note,
@@ -163,8 +209,10 @@ fun DetailScreen(
     item: SavedItem,
     onBack: () -> Unit,
     onSave: (SavedItem) -> Unit,
-    onDelete: (SavedItem) -> Unit
+    onDelete: (SavedItem) -> Unit,
+    onSetReminder: (Long?) -> Unit
 ) {
+    val context = LocalContext.current
     var note by remember(item.id) { mutableStateOf(item.note) }
     var link by remember(item.id) { mutableStateOf(item.link ?: "") }
     var author by remember(item.id) { mutableStateOf(item.authorName ?: "") }
@@ -191,6 +239,50 @@ fun DetailScreen(
             maxSize = 1200,
             contentScale = ContentScale.Fit
         )
+        Spacer(Modifier.height(16.dp))
+
+        Text("Reminder", style = MaterialTheme.typography.titleMedium)
+        Text(
+            if (item.remindAt != null) "Set for ${formatDate(item.remindAt)}"
+            else "No reminder set"
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = { onSetReminder(System.currentTimeMillis() + 60_000L) },
+                contentPadding = PaddingValues(horizontal = 12.dp)
+            ) { Text("In 1 min (test)") }
+            OutlinedButton(
+                onClick = { onSetReminder(System.currentTimeMillis() + 3_600_000L) },
+                contentPadding = PaddingValues(horizontal = 12.dp)
+            ) { Text("In 1 hour") }
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = { onSetReminder(tomorrowAt(9)) },
+                contentPadding = PaddingValues(horizontal = 12.dp)
+            ) { Text("Tomorrow 9 AM") }
+            Button(
+                onClick = { pickDateTime(context) { time -> onSetReminder(time) } },
+                contentPadding = PaddingValues(horizontal = 12.dp)
+            ) { Text("Pick date & time") }
+        }
+        if (item.remindAt != null) {
+            TextButton(onClick = { onSetReminder(null) }) { Text("Clear reminder") }
+        }
+        if (!ReminderScheduler.canScheduleExact(context)) {
+            TextButton(onClick = {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    context.startActivity(
+                        Intent(
+                            Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                            Uri.parse("package:${context.packageName}")
+                        )
+                    )
+                }
+            }) { Text("Allow exact reminders (recommended)") }
+        }
         Spacer(Modifier.height(16.dp))
 
         OutlinedTextField(

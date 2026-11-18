@@ -3,6 +3,7 @@ package com.screensort.app
 import android.content.Context
 import androidx.room.Dao
 import androidx.room.Database
+import androidx.room.Delete
 import androidx.room.Entity
 import androidx.room.Insert
 import androidx.room.PrimaryKey
@@ -10,8 +11,9 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Update
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
-import androidx.room.Delete
 
 @Entity(tableName = "saved_items")
 data class SavedItem(
@@ -23,7 +25,8 @@ data class SavedItem(
     val ocrText: String = "",
     val link: String? = null,
     val note: String = "",
-    val savedAt: Long = System.currentTimeMillis()
+    val savedAt: Long = System.currentTimeMillis(),
+    val remindAt: Long? = null
 )
 
 @Dao
@@ -34,17 +37,26 @@ interface SavedItemDao {
     @Update
     suspend fun update(item: SavedItem)
 
+    @Delete
+    suspend fun delete(item: SavedItem)
+
     @Query("SELECT * FROM saved_items ORDER BY savedAt DESC")
     fun getAll(): Flow<List<SavedItem>>
 
     @Query("SELECT * FROM saved_items WHERE id = :id")
     suspend fun getById(id: Long): SavedItem?
 
-    @Delete
-    suspend fun delete(item: SavedItem)
+    @Query("SELECT * FROM saved_items WHERE remindAt IS NOT NULL AND remindAt > :now")
+    suspend fun getUpcomingReminders(now: Long): List<SavedItem>
 }
 
-@Database(entities = [SavedItem::class], version = 1, exportSchema = false)
+val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE saved_items ADD COLUMN remindAt INTEGER")
+    }
+}
+
+@Database(entities = [SavedItem::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun savedItemDao(): SavedItemDao
 
@@ -58,7 +70,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "screensort.db"
-                ).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2).build().also { INSTANCE = it }
             }
     }
 }
