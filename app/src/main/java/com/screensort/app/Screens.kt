@@ -32,10 +32,10 @@ import java.text.DateFormat
 import java.util.Calendar
 import java.util.Date
 
-private fun formatDate(millis: Long): String =
+fun formatDate(millis: Long): String =
     DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(millis))
 
-private fun tomorrowAt(hour: Int): Long {
+fun tomorrowAt(hour: Int): Long {
     val cal = Calendar.getInstance()
     cal.add(Calendar.DAY_OF_YEAR, 1)
     cal.set(Calendar.HOUR_OF_DAY, hour)
@@ -45,7 +45,7 @@ private fun tomorrowAt(hour: Int): Long {
     return cal.timeInMillis
 }
 
-private fun pickDateTime(context: Context, onPicked: (Long) -> Unit) {
+fun pickDateTime(context: Context, onPicked: (Long) -> Unit) {
     val now = Calendar.getInstance()
     DatePickerDialog(
         context,
@@ -69,7 +69,7 @@ private fun pickDateTime(context: Context, onPicked: (Long) -> Unit) {
     ).show()
 }
 
-private fun loadBitmap(context: Context, uriString: String, maxSize: Int): Bitmap? = try {
+fun loadBitmap(context: Context, uriString: String, maxSize: Int): Bitmap? = try {
     val uri = Uri.parse(uriString)
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     context.contentResolver.openInputStream(uri)?.use {
@@ -156,7 +156,7 @@ fun ListScreen(
 }
 
 @Composable
-private fun ItemCard(item: SavedItem, onOpen: (Long) -> Unit) {
+fun ItemCard(item: SavedItem, onOpen: (Long) -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()

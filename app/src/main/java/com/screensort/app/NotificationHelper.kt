@@ -27,7 +27,7 @@ object NotificationHelper {
             "Saved screenshots",
             NotificationManager.IMPORTANCE_HIGH
         )
-        channel.description = "Lets you add a note to each screenshot"
+        channel.description = "Lets you add a note or reminder to each screenshot"
         context.getSystemService(NotificationManager::class.java)
             .createNotificationChannel(channel)
     }
@@ -37,6 +37,19 @@ object NotificationHelper {
                 ContextCompat.checkSelfPermission(
                     context, Manifest.permission.POST_NOTIFICATIONS
                 ) == PackageManager.PERMISSION_GRANTED
+
+    private fun quickSavePendingIntent(context: Context, itemId: Long): PendingIntent {
+        val intent = Intent(context, QuickSaveActivity::class.java).apply {
+            putExtra(EXTRA_ITEM_ID, itemId)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        return PendingIntent.getActivity(
+            context,
+            itemId.toInt() + 5_000_000,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
 
     private fun shareAction(
         context: Context,
@@ -85,12 +98,19 @@ object NotificationHelper {
             android.R.drawable.ic_menu_edit, "Add note", pendingIntent
         ).addRemoteInput(remoteInput).build()
 
+        val remindAction = NotificationCompat.Action.Builder(
+            android.R.drawable.ic_popup_reminder, "Remind",
+            quickSavePendingIntent(context, itemId)
+        ).build()
+
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_save)
             .setContentTitle("Screenshot saved to ScreenSort")
-            .setContentText("Add a note, or share it")
+            .setContentText("Tap to add a note, link or reminder")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(quickSavePendingIntent(context, itemId))
             .addAction(noteAction)
+            .addAction(remindAction)
             .addAction(shareAction(context, itemId, imageUri, ""))
             .setAutoCancel(true)
             .build()
@@ -108,6 +128,12 @@ object NotificationHelper {
             .setContentText(note)
             .setOnlyAlertOnce(true)
             .setAutoCancel(true)
+            .addAction(
+                NotificationCompat.Action.Builder(
+                    android.R.drawable.ic_popup_reminder, "Remind",
+                    quickSavePendingIntent(context, itemId)
+                ).build()
+            )
 
         if (imageUri.isNotBlank()) {
             builder.addAction(shareAction(context, itemId, imageUri, note))
